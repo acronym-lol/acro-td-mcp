@@ -169,7 +169,9 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
         })
 
         self._writeRegistry(instances)
-        print(f"AcroMCP registered on port {port}")
+        print("=" * 60)
+        print(f"AcroMCP - registered on port {port}")
+        print("=" * 60)
 
     def _unregisterInstance(self):
         """Remove this TD instance from the shared registry."""
