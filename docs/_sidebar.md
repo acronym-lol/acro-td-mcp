@@ -1,0 +1,3 @@
+- [Home](/)
+- [HTTP API Reference](http-api)
+- [MCP Tools](mcp-tools)
