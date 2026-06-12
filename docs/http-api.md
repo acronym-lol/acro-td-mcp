@@ -9,7 +9,7 @@ The AcroMCP (Acro TD Core MCP) is an HTTP API bridge that allows Claude (or any 
 | **Extension** | `AcroMCP` |
 | **Script** | `modules/acro-td-mcp/scripts/AcroMCP.py` |
 | **Base class** | `CallbacksExt`, `AcroVersionExt` |
-| **TD Location** | `/AcroCore/AcroMCP` |
+| **TD Location** | `/AcroMCP` |
 | **Server Port** | `54200-54209` (auto-assigned) |
 | **Response Format** | JSON |
 
@@ -148,7 +148,7 @@ Serialize an operator's full details using `TDJSON.opToJSONOp()`.
 
 | Param | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `path` | Yes | — | Operator path (e.g., `/AcroCore/AcroMCP`) |
+| `path` | Yes | — | Operator path (e.g., `/AcroMCP`) |
 | `extra` | No | `*` | Extra attributes filter passed to `TDJSON.opToJSONOp()` |
 
 **Response:**
@@ -157,7 +157,7 @@ Serialize an operator's full details using `TDJSON.opToJSONOp()`.
 {
   "op": {
     "name": "AcroMCP",
-    "path": "/AcroCore/AcroMCP",
+    "path": "/AcroMCP",
     "type": "COMP",
     "family": "COMP",
     "params": { ... }
@@ -168,7 +168,7 @@ Serialize an operator's full details using `TDJSON.opToJSONOp()`.
 **Example:**
 
 ```bash
-curl "http://localhost:54200/api/op?path=/AcroCore/AcroMCP"
+curl "http://localhost:54200/api/op?path=/AcroMCP"
 ```
 
 ---
@@ -193,7 +193,7 @@ List child operators of a given path, with optional depth and tag filtering.
   "children": [
     {
       "name": "AcroMCP",
-      "path": "/AcroCore/AcroMCP",
+      "path": "/AcroMCP",
       "type": "COMP",
       "family": "COMP"
     },
@@ -244,7 +244,7 @@ Read a single parameter's value and metadata.
 **Example:**
 
 ```bash
-curl "http://localhost:54200/api/par?path=/AcroCore/AcroMCP&name=Webserverport"
+curl "http://localhost:54200/api/par?path=/AcroMCP&name=Webserverport"
 ```
 
 ---
@@ -257,7 +257,7 @@ Set a parameter value on an operator.
 
 ```json
 {
-  "path": "/AcroCore/AcroMCP",
+  "path": "/AcroMCP",
   "name": "Webserverport",
   "value": 54200
 }
@@ -277,7 +277,7 @@ Set a parameter value on an operator.
 
 ```bash
 curl -X POST http://localhost:54200/api/par \
-  -d '{"path": "/AcroCore/AcroMCP", "name": "Webserverport", "value": 54200}'
+  -d '{"path": "/AcroMCP", "name": "Webserverport", "value": 54200}'
 ```
 
 ## Error Handling
@@ -305,7 +305,7 @@ Key operator paths in this project:
 |------|-------------|
 | `/` | Scene root |
 | `/AcroCore` | Main project component |
-| `/AcroCore/AcroMCP` | AcroMCP API bridge |
+| `/AcroMCP` | AcroMCP API bridge |
 | `/AcroCore/AcroComponentCreator` | Component creation tool |
 | `/AcroCore/AcroVersionManager` | Central version manager |
 

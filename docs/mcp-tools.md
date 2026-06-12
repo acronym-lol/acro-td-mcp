@@ -14,7 +14,7 @@ Confirm TouchDesigner is up. Returns:
 
 ```json
 { "status": "ok", "td_version": "099", "td_build": "2025.32280",
-  "project": "AcroTDCore.toe", "osName": "Windows" }
+  "project": "AcroCore.toe", "osName": "Windows" }
 ```
 
 Maps to `GET /`.
