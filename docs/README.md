@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-08-27
+---
+
 # Acro TD MCP
 
 MCP bridge for TouchDesigner — exposes scene introspection and Python execution to Claude Code (or any MCP-aware client).

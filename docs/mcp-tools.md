@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-08-27
+---
+
 # MCP Tools
 
 Every tool registered by the Acro TD MCP server. Tool names are prefixed `td_*` to keep the TouchDesigner namespace obvious to MCP clients.

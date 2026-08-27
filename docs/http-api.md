@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-08-27
+---
+
 # AcroMCP
 
 The AcroMCP (Acro TD Core MCP) is an HTTP API bridge that allows Claude (or any external tool) to introspect and manipulate the running TouchDesigner scene. It exposes a webserver with structured JSON endpoints for executing Python, inspecting operators, listing children, and getting/setting parameters.
