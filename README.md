@@ -1,6 +1,10 @@
 # Acro TD MCP
 
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://acronym-lol.github.io/acro-td-mcp/)
+
 MCP server bridge for TouchDesigner — exposes a Python HTTP server in TD and a Node MCP server that wraps it as native tools for Claude Code.
+
+**Documentation:** https://acronym-lol.github.io/acro-td-mcp/
 
 ## Architecture
 
