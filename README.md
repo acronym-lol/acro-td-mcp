@@ -11,14 +11,33 @@ MCP server bridge for TouchDesigner — exposes a Python HTTP server in TD and a
 - **Python side** (`scripts/AcroMCP.py`): `AcroMCP` extension class registers an HTTP webserver inside TD, exposes operator/parameter/network introspection and Python execution endpoints, and writes a registry of running instances to `tempdir/acro-td-mcp-instances.json`.
 - **Node side** (`src/index.ts`): MCP server (registered as `acro-td-mcp`) wraps the HTTP API as MCP tools (`td_health`, `td_op`, `td_execute`, `td_top_preview`, `td_panel_preview`, `td_guide`, `td_help`, etc.). Auto-selects which TD instance to talk to based on current working directory.
 
+## Using it with Claude Code
+
+The server ships prebuilt in `dist/index.js`, so it only needs Node on your `PATH`. Run `setup.ps1` / `setup.sh` to set `ACRO_TD_MCP`, then point your project's `.mcp.json` at it:
+
+```json
+{
+  "mcpServers": {
+    "acro-td-mcp": {
+      "command": "node",
+      "args": ["${ACRO_TD_MCP}/dist/index.js"]
+    }
+  }
+}
+```
+
+Claude Code expands `${ACRO_TD_MCP}` itself, so the file has no machine-specific path and can be committed.
+
 ## Build
+
+Only needed after changing `src/`:
 
 ```bash
 npm install
 npm run build
 ```
 
-Produces `dist/index.js` which is what `.mcp.json` should point at.
+Then commit `dist/index.js`. In acro-td-core, run the same commands from the repo root; its CI fails if the committed bundle doesn't match the source.
 
 ## Environment
 

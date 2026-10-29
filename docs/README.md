@@ -26,15 +26,20 @@ AcroMCP runs any Python it's sent, so it only answers local requests that carry 
 
 In TD: `AcroMCP` lives at `/AcroMCP` (extension `ext.AcroMCP`, shortcut `op.AMCP`). It's wired automatically when the project loads — no setup needed in-scene.
 
-Outside TD: build the Node bundle once after pulling fresh source:
+Outside TD: the Node bundle ships prebuilt in `dist/index.js`, so you only need Node on your `PATH`. The project's `.mcp.json` points Claude Code at it through the `ACRO_TD_MCP` variable that `setup.ps1` / `setup.sh` sets:
 
-```bash
-cd modules/acro-td-mcp
-npm install
-npm run build
+```json
+{
+  "mcpServers": {
+    "acro-td-mcp": {
+      "command": "node",
+      "args": ["${ACRO_TD_MCP}/dist/index.js"]
+    }
+  }
+}
 ```
 
-Then `.mcp.json` at the project root points Claude Code at `dist/index.js`.
+After changing `src/`, rebuild with `npm install && npm run build` and commit `dist/index.js`.
 
 ## What it can do
 
