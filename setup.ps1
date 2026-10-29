@@ -3,5 +3,5 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $env:ACRO_TD_MCP = $ScriptDir
 Write-Host "ACRO_TD_MCP set to $ScriptDir"
 
-# Note: npm install and build are handled by the parent project's setup.ps1
-# When used standalone, run: npm install && npm run build from the project root
+# The MCP server ships prebuilt in dist/index.js and only needs Node on PATH.
+# After changing src/, rebuild with: npm install && npm run build
