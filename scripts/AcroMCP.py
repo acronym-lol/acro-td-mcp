@@ -1,7 +1,10 @@
 from json import loads, dumps
 from io import StringIO
 from datetime import datetime
+import hmac
+import ipaddress
 import os
+import secrets
 import sys
 import tempfile
 import traceback
@@ -13,6 +16,41 @@ from AcroVersionExt import AcroVersionExt
 from TDStoreTools import StorageManager
 import TDJSON
 TDF = op.TDModules.mod.TDFunctions
+
+
+def _header(request, name):
+    """Case-insensitive lookup of an HTTP header in the webserverDAT request dict."""
+    name = name.lower()
+    for key, value in request.items():
+        if isinstance(key, str) and key.lower() == name:
+            return str(value)
+    return ''
+
+
+def _hostPart(address):
+    """Strip the port from 'host:port' or '[v6]:port'."""
+    address = (address or '').strip()
+    if address.startswith('['):
+        return address[1:].split(']', 1)[0]
+    if address.count(':') == 1:
+        return address.split(':', 1)[0]
+    return address
+
+
+def _isLoopbackClient(address):
+    """True if the client address (as reported by the webserverDAT) is this machine."""
+    try:
+        ip = ipaddress.ip_address(_hostPart(address))
+    except ValueError:
+        return False
+    if getattr(ip, 'ipv4_mapped', None):
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
+
+
+def _isLoopbackHost(host):
+    """True if the Host header names this machine. Blocks DNS rebinding."""
+    return _hostPart(host).lower() in ('localhost', '127.0.0.1', '::1')
 
 
 class AcroMCP(CallbacksExt, AcroVersionExt):
@@ -82,6 +120,10 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
         self._panelOpViewer = self.ownerComp.op('panel_opviewer')
         self._panelCaptureState = None
 
+        # Per-session secret every request must carry. Set by _registerInstance();
+        # until then all requests are rejected.
+        self._token = None
+
         # Register this instance in the shared registry
         try:
             self._registerInstance()
@@ -110,10 +152,14 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
             return []
 
     def _writeRegistry(self, instances):
-        """Write the instance registry."""
+        """Write the instance registry, readable by this user only (it holds the tokens)."""
         path = self._getRegistryPath()
-        with open(path, 'w') as f:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
             json.dump({'instances': instances}, f, indent=2)
+        if os.name != 'nt':
+            # os.open's mode only applies when it creates the file
+            os.chmod(path, 0o600)
 
     def _isPortAvailable(self, port):
         """Check if a port is available by attempting to bind to it."""
@@ -136,24 +182,46 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
             active.append(inst)
         return active
 
+    def _isPortReserved(self, port):
+        """
+        True if the OS refuses to bind the port at all - on Windows, a range
+        reserved by WinNAT (Hyper-V, WSL, Docker). Such a port looks free to
+        netstat, but the webserver can never listen on it.
+        """
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('0.0.0.0', port))
+        except PermissionError:
+            return True
+        except OSError:
+            # In use - possibly by this instance's own webserver. The registry
+            # already tracks other instances.
+            return False
+        return False
+
     def _findAvailablePort(self, instances, start=54200, max_port=54209):
-        """Find the lowest available port not in use by other instances."""
+        """Find the lowest port not used by other instances and not reserved by the OS."""
         used_ports = {inst.get('port') for inst in instances}
         for port in range(start, max_port + 1):
-            if port not in used_ports:
+            if port not in used_ports and not self._isPortReserved(port):
                 return port
         raise RuntimeError(f"No available ports in range {start}-{max_port}")
 
     def _registerInstance(self):
         """Register this TD instance in the shared registry."""
         instances = self._readRegistry()
-        # Remove any previous entry from this process (handles re-init)
+        # On re-init (e.g. after editing this file) keep this process's port and
+        # token, so the MCP client isn't stranded. Then drop the old entry.
         my_pid = os.getpid()
+        mine = next((inst for inst in instances if inst.get('pid') == my_pid), {})
         instances = [inst for inst in instances if inst.get('pid') != my_pid]
         instances = self._cleanStaleEntries(instances)
 
-        # Find available port
-        port = self._findAvailablePort(instances)
+        port = mine.get('port')
+        if not port or port in {inst.get('port') for inst in instances}:
+            port = self._findAvailablePort(instances)
+        self._token = mine.get('token') or secrets.token_urlsafe(32)
 
         # Set the webserver port parameter
         if hasattr(self.ownerComp.par, 'Webserverport'):
@@ -165,7 +233,8 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
             'project_name': project.name,
             'project_path': project.folder.replace('\\', '/'),
             'pid': os.getpid(),
-            'started': datetime.now().isoformat(),
+            'started': mine.get('started') or datetime.now().isoformat(),
+            'token': self._token,
         })
 
         self._writeRegistry(instances)
@@ -198,7 +267,40 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
     # HTTP Router
     # -------------------------------------------------------------------------
 
+    def _checkAccess(self, request):
+        """
+        Return (status, message) to reject the request, or None to allow it.
+
+        The token is the real protection. The webserverDAT listens on every
+        network interface and a 'clientAddress' request header can overwrite
+        the address it reports, so the address and Host checks are defense in
+        depth. The Host check blocks DNS rebinding; the Origin check keeps web
+        pages out (the MCP server never sends one).
+        """
+        if not _isLoopbackClient(request.get('clientAddress', '')):
+            return 403, 'AcroMCP only accepts requests from this machine'
+        if not _isLoopbackHost(_header(request, 'Host')):
+            return 403, 'AcroMCP only accepts requests addressed to localhost'
+        if _header(request, 'Origin'):
+            return 403, 'AcroMCP does not accept requests from web pages'
+        scheme, _, token = _header(request, 'Authorization').partition(' ')
+        if (not self._token or scheme.lower() != 'bearer'
+                or not hmac.compare_digest(token.strip().encode(), self._token.encode())):
+            return 401, 'Missing or wrong AcroMCP token (it is in the instance registry)'
+        if request.get('method') == 'POST':
+            contentType = _header(request, 'Content-Type').split(';')[0].strip().lower()
+            if contentType != 'application/json':
+                return 415, 'POST bodies must be sent as Content-Type: application/json'
+        return None
+
     def onHTTPRequestWebServer(self, webServerDAT, request, response):
+        rejection = self._checkAccess(request)
+        if rejection:
+            status, message = rejection
+            if status == 401:
+                response['WWW-Authenticate'] = 'Bearer'
+            return self._jsonResponse(response, status, {'error': message})
+
         uri = request['uri'].split('?')[0]
         method = request['method']
 

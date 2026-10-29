@@ -15,6 +15,9 @@ export interface TDInstance {
   project_path: string;
   pid: number;
   started: string;
+  // Per-session secret AcroMCP requires as `Authorization: Bearer <token>`.
+  // Never print or return it from a tool.
+  token?: string;
 }
 
 interface InstanceRegistry {
@@ -251,12 +254,14 @@ export interface FindEmptyResult {
 
 export class AcroMCPClient {
   private baseUrl: string;
+  private port: number;
   private selectedInstance: TDInstance | null = null;
 
   constructor() {
     // Check for explicit port override first
     const envPort = process.env.ACRO_TD_MCP_PORT;
     if (envPort) {
+      this.port = Number(envPort);
       this.baseUrl = `http://localhost:${envPort}`;
       return;
     }
@@ -266,11 +271,12 @@ export class AcroMCPClient {
     const instance = findInstanceForCwd(instances);
     if (instance) {
       this.selectedInstance = instance;
-      this.baseUrl = `http://localhost:${instance.port}`;
+      this.port = instance.port;
     } else {
       // Fallback to default port if no instances found
-      this.baseUrl = "http://localhost:54200";
+      this.port = 54200;
     }
+    this.baseUrl = `http://localhost:${this.port}`;
   }
 
   /**
@@ -304,6 +310,7 @@ export class AcroMCPClient {
 
     if (instance) {
       this.selectedInstance = instance;
+      this.port = instance.port;
       this.baseUrl = `http://localhost:${instance.port}`;
       return instance;
     }
@@ -312,13 +319,32 @@ export class AcroMCPClient {
 
   private async fetch(path: string, options?: RequestInit): Promise<unknown> {
     const url = `${this.baseUrl}${path}`;
+    // Read the token on every request, so a TD restart (new token) is picked
+    // up without restarting this server.
+    const token = readRegistry().find((i) => i.port === this.port)?.token;
+    const headers = new Headers(options?.headers);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
     let res: Response;
     try {
-      res = await fetch(url, options);
+      res = await fetch(url, { ...options, headers });
     } catch (err) {
       throw new Error(
         `Cannot connect to TouchDesigner at ${this.baseUrl}. ` +
         `Is TouchDesigner running with AcroMCP active?`
+      );
+    }
+
+    if (res.status === 401) {
+      throw new Error(
+        `AcroMCP at ${this.baseUrl} rejected the request token. The registry ` +
+        `entry for port ${this.port} is missing or stale: reload AcroMCP or restart TouchDesigner.`
+      );
+    }
+    if (res.status === 403 || res.status === 415) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(
+        `AcroMCP at ${this.baseUrl} refused the request: ${body.error ?? res.statusText}`
       );
     }
     return res.json();
