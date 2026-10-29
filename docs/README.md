@@ -20,6 +20,8 @@ Claude Code  →  MCP server (Node, dist/index.js)  →  AcroMCP HTTP API (local
 
 Each TD instance grabs an unused port in 54200–54209 on init. The MCP server picks the matching instance based on the client's `cwd`.
 
+AcroMCP runs any Python it's sent, so it only answers local requests that carry the instance's per-session token from the registry. The MCP server sends it automatically; see [Security](http-api#security) for calling it yourself.
+
 ## Quick start
 
 In TD: `AcroMCP` lives at `/AcroMCP` (extension `ext.AcroMCP`, shortcut `op.AMCP`). It's wired automatically when the project loads — no setup needed in-scene.
@@ -63,7 +65,7 @@ The MCP server exposes ~15 tools, all prefixed `td_`:
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `ACRO_TD_MCP` | (set by `setup.ps1`/`setup.sh`) | Module root on disk |
-| `ACRO_TD_MCP_PORT` | unset | Force the MCP client to talk to a specific TD HTTP port instead of auto-selecting from the registry |
+| `ACRO_TD_MCP_PORT` | unset | Force the MCP client to talk to a specific TD HTTP port instead of auto-selecting from the registry. The token still comes from that port's registry entry |
 | `TD_HELP_PATH` | unset | Override where to find TouchDesigner's bundled offline help (consumed by `td_help`) |
 
 ## Installation

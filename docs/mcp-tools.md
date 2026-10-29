@@ -40,6 +40,8 @@ List every TD instance that has registered itself in `tempdir/acro-td-mcp-instan
 
 The MCP server auto-selects an instance by matching `process.cwd()` against each instance's `project_path`. Pure client-side logic — no HTTP call.
 
+Each registry entry also holds the instance's access token, which the MCP server sends on every request. `td_instances` never includes it in its output.
+
 ---
 
 ## Code execution

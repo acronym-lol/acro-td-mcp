@@ -25,15 +25,18 @@ AcroMCP supports running multiple TouchDesigner instances simultaneously. Each i
 ### How It Works
 
 1. **On startup**, AcroMCP reads the instance registry from the temp directory
-2. **Finds an available port** in the range 54200-54209
-3. **Registers itself** with project name, path, port, and PID
-4. **On shutdown**, the instance is removed from the registry
+2. **Finds an available port** in the range 54200-54209, skipping ports Windows has reserved
+3. **Registers itself** with project name, path, port, PID and a fresh random token
+4. **On extension reload** (for example after editing `AcroMCP.py`), it keeps its port and token
+5. **On shutdown**, the instance is removed from the registry
 
 ### Instance Registry
 
 The registry file is located at:
 - **Windows**: `%TEMP%\acro-td-mcp-instances.json`
-- **macOS**: `/tmp/acro-td-mcp-instances.json`
+- **macOS**: `$TMPDIR/acro-td-mcp-instances.json`
+
+The file holds each instance's token, so it's written readable by your user account only.
 
 ### MCP Auto-Selection
 
@@ -60,6 +63,39 @@ Use the `td_instances` MCP tool to list all running TD instances:
 }
 ```
 
+## Security
+
+`POST /api/exec` runs any Python it's sent, so AcroMCP accepts a request only if all of these hold:
+
+- **It carries the instance's token** as `Authorization: Bearer <token>`. This is the real protection.
+- **It comes from this machine** and addresses `localhost`, `127.0.0.1` or `[::1]`. This is defense in depth: the
+  Web Server DAT always listens on every network interface, and a request header named `clientAddress` can
+  overwrite the address it reports.
+- **It has no `Origin` header**, so web pages can't call it. The MCP server never sends one.
+- **A POST body is `Content-Type: application/json`.**
+
+The token is random, made fresh each time TouchDesigner starts, and only ever stored in the instance registry. It's
+never saved into the `.toe`/`.tox`, and `td_instances` doesn't show it. The MCP server reads it from the registry on
+every request, so a TouchDesigner restart needs no MCP restart.
+
+### Getting the token for curl
+
+Read the token for your port from the registry. These snippets keep it in a variable instead of printing it:
+
+```powershell
+# PowerShell
+$TOKEN = ((Get-Content "$env:TEMP\acro-td-mcp-instances.json" | ConvertFrom-Json).instances |
+          Where-Object port -eq 54200).token
+curl.exe -H "Authorization: Bearer $TOKEN" http://localhost:54200/
+```
+
+```bash
+# bash (macOS, or Git Bash on Windows)
+TOKEN=$(node -e 'const r=require(require("os").tmpdir()+"/acro-td-mcp-instances.json");
+  console.log(r.instances.find(i => i.port === 54200).token)')
+curl -H "Authorization: Bearer $TOKEN" http://localhost:54200/
+```
+
 ## API Endpoints
 
 ### `GET /` — Health Check
@@ -81,7 +117,7 @@ Returns basic info about the running TouchDesigner instance.
 **Example:**
 
 ```bash
-curl http://localhost:54200/
+curl -H "Authorization: Bearer $TOKEN" http://localhost:54200/
 ```
 
 ---
@@ -132,14 +168,17 @@ When using `exec()`, any local variables created by the code are returned in the
 ```bash
 # Evaluate an expression
 curl -X POST http://localhost:54200/api/exec \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"code": "str(op(\"/\").children)"}'
 
 # Execute statements
 curl -X POST http://localhost:54200/api/exec \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"code": "x = len(op(\"/\").children)"}'
 
 # Create an operator
 curl -X POST http://localhost:54200/api/exec \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"code": "op(\"/AcroCore\").create(textDAT, \"myText\")"}'
 ```
 
@@ -173,7 +212,7 @@ Serialize an operator's full details using `TDJSON.opToJSONOp()`.
 **Example:**
 
 ```bash
-curl "http://localhost:54200/api/op?path=/AcroMCP"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:54200/api/op?path=/AcroMCP"
 ```
 
 ---
@@ -211,13 +250,13 @@ List child operators of a given path, with optional depth and tag filtering.
 
 ```bash
 # List root children
-curl "http://localhost:54200/api/children?path=/"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:54200/api/children?path=/"
 
 # List with depth
-curl "http://localhost:54200/api/children?path=/AcroCore&depth=2"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:54200/api/children?path=/AcroCore&depth=2"
 
 # Filter by tags
-curl "http://localhost:54200/api/children?path=/&tags=version_tracking"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:54200/api/children?path=/&tags=version_tracking"
 ```
 
 ---
@@ -249,7 +288,7 @@ Read a single parameter's value and metadata.
 **Example:**
 
 ```bash
-curl "http://localhost:54200/api/par?path=/AcroMCP&name=Webserverport"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:54200/api/par?path=/AcroMCP&name=Webserverport"
 ```
 
 ---
@@ -282,6 +321,7 @@ Set a parameter value on an operator.
 
 ```bash
 curl -X POST http://localhost:54200/api/par \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"path": "/AcroMCP", "name": "Webserverport", "value": 54200}'
 ```
 
@@ -290,7 +330,10 @@ curl -X POST http://localhost:54200/api/par \
 All endpoints return JSON error responses:
 
 - **400** — Bad request (missing required parameters)
+- **401** — Missing or wrong token (see [Security](#security))
+- **403** — Not a local request, a `Host` other than localhost, or an `Origin` header
 - **404** — Not found (operator or parameter doesn't exist, or unknown route)
+- **415** — A POST body that isn't `Content-Type: application/json`
 - **500** — Internal server error (uncaught exception in handler)
 
 Error response format:
