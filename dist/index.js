@@ -26826,10 +26826,13 @@ function findInstanceForCwd(instances) {
 var AcroMCPClient = class {
   baseUrl;
   port;
+  // True when ACRO_TD_MCP_PORT pins the port; otherwise the port follows the selected instance
+  fixedPort = false;
   selectedInstance = null;
   constructor() {
     const envPort = process.env.ACRO_TD_MCP_PORT;
     if (envPort) {
+      this.fixedPort = true;
       this.port = Number(envPort);
       this.baseUrl = `http://localhost:${envPort}`;
       return;
@@ -26845,6 +26848,28 @@ var AcroMCPClient = class {
     this.baseUrl = `http://localhost:${this.port}`;
   }
   /**
+   * The selected instance's current registry entry, or null if it isn't running.
+   *
+   * The instance is tracked by PID, not port: if its TD re-registers on another
+   * port the client follows it, and a different TD that later takes the old port
+   * is never used. After a TD restart (new PID) the same project is picked up
+   * again; a different project never is.
+   */
+  currentInstance() {
+    const instances = readRegistry();
+    if (this.fixedPort) {
+      return instances.find((i) => i.port === this.port) ?? null;
+    }
+    const prev = this.selectedInstance;
+    const instance = prev ? instances.find((i) => i.pid === prev.pid) ?? instances.find((i) => normalizePath(i.project_path) === normalizePath(prev.project_path)) ?? null : findInstanceForCwd(instances);
+    if (instance) {
+      this.selectedInstance = instance;
+      this.port = instance.port;
+      this.baseUrl = `http://localhost:${instance.port}`;
+    }
+    return instance;
+  }
+  /**
    * Get all registered TD instances
    */
   getInstances() {
@@ -26854,7 +26879,7 @@ var AcroMCPClient = class {
    * Get the currently selected instance
    */
   getSelectedInstance() {
-    return this.selectedInstance;
+    return this.currentInstance();
   }
   /**
    * Switch to a different instance by port or project name
@@ -26878,10 +26903,15 @@ var AcroMCPClient = class {
     return null;
   }
   async fetch(path2, options) {
+    const instance = this.currentInstance();
+    if (!instance && this.selectedInstance && !this.fixedPort) {
+      throw new Error(
+        `TouchDesigner for ${this.selectedInstance.project_path} isn't running. Reopen that project, or reconnect this MCP server to pick another instance.`
+      );
+    }
     const url = `${this.baseUrl}${path2}`;
-    const token = readRegistry().find((i) => i.port === this.port)?.token;
     const headers = new Headers(options?.headers);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (instance?.token) headers.set("Authorization", `Bearer ${instance.token}`);
     let res;
     try {
       res = await fetch(url, { ...options, headers });
@@ -27339,7 +27369,7 @@ server.registerTool(
         project_name: inst.project_name,
         project_path: inst.project_path,
         started: inst.started,
-        is_selected: selected?.port === inst.port
+        is_selected: selected?.pid === inst.pid
       }))
     };
     if (instances.length === 0) {

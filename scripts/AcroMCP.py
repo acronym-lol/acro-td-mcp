@@ -161,26 +161,51 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
             # os.open's mode only applies when it creates the file
             os.chmod(path, 0o600)
 
-    def _isPortAvailable(self, port):
-        """Check if a port is available by attempting to bind to it."""
+    def _isPortListening(self, port):
+        """True if something already accepts connections on the port."""
         import socket
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+            with socket.create_connection(('127.0.0.1', port), timeout=0.2):
                 return True
         except OSError:
             return False
 
+    def _isProcessAlive(self, pid):
+        """True if a process with this PID is running."""
+        if not pid:
+            return False
+        if os.name == 'nt':
+            # os.kill(pid, 0) isn't a probe on Windows (signal 0 is CTRL_C_EVENT)
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+            kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: running, not ours
+            try:
+                code = wintypes.DWORD()
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+                return code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
     def _cleanStaleEntries(self, instances):
-        """Remove entries where the port is no longer in use (process died)."""
-        active = []
-        for inst in instances:
-            port = inst.get('port', 0)
-            # If we can bind to the port, the old process is gone
-            if self._isPortAvailable(port):
-                continue  # Stale entry, skip it
-            active.append(inst)
-        return active
+        """Remove entries whose process has exited."""
+        # Not a port test: on Windows, binding localhost succeeds while another
+        # TD's webserver listens on 0.0.0.0, so live instances looked stale and
+        # the next instance took their port.
+        return [inst for inst in instances if self._isProcessAlive(inst.get('pid'))]
 
     def _isPortReserved(self, port):
         """
@@ -201,11 +226,20 @@ class AcroMCP(CallbacksExt, AcroVersionExt):
         return False
 
     def _findAvailablePort(self, instances, start=54200, max_port=54209):
-        """Find the lowest port not used by other instances and not reserved by the OS."""
+        """
+        Find the lowest port not used by other instances, not reserved by the OS,
+        and with nothing else listening on it. TD's webserver will share a port
+        that's already in use, so a bind test alone can't catch that.
+        """
         used_ports = {inst.get('port') for inst in instances}
+        # This instance's webserver may already be listening on its saved port
+        own_port = self.ownerComp.par.Webserverport.eval() if hasattr(self.ownerComp.par, 'Webserverport') else None
         for port in range(start, max_port + 1):
-            if port not in used_ports and not self._isPortReserved(port):
-                return port
+            if port in used_ports or self._isPortReserved(port):
+                continue
+            if port != own_port and self._isPortListening(port):
+                continue
+            return port
         raise RuntimeError(f"No available ports in range {start}-{max_port}")
 
     def _registerInstance(self):
