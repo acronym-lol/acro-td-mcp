@@ -25,10 +25,11 @@ AcroMCP supports running multiple TouchDesigner instances simultaneously. Each i
 ### How It Works
 
 1. **On startup**, AcroMCP reads the instance registry from the temp directory
-2. **Finds an available port** in the range 54200-54209, skipping ports Windows has reserved
-3. **Registers itself** with project name, path, port, PID and a fresh random token
-4. **On extension reload** (for example after editing `AcroMCP.py`), it keeps its port and token
-5. **On shutdown**, the instance is removed from the registry
+2. **Drops entries whose process has exited.** An entry for a running TD is always kept
+3. **Finds an available port** in the range 54200-54209, skipping ports other instances have registered, ports Windows has reserved, and ports something else is already listening on
+4. **Registers itself** with project name, path, port, PID and a fresh random token
+5. **On extension reload** (for example after editing `AcroMCP.py`), it keeps its port and token
+6. **On shutdown**, the instance is removed from the registry
 
 ### Instance Registry
 
@@ -43,6 +44,8 @@ The file holds each instance's token, so it's written readable by your user acco
 The MCP server automatically selects the correct TD instance based on:
 1. **Working directory match** — If Claude Code runs from a project directory, it connects to the matching TD instance
 2. **Fallback** — If no match, uses the first available instance
+
+After that it stays with the instance it picked, tracked by PID. It looks the port and token up again on every request, so it follows that TD if it moves to another port, and never talks to a different TD that later takes the old port. If that TD restarts, the server picks up the same project again. If the project is closed, requests fail with an error rather than switching to another project; reconnect the MCP server to pick again.
 
 ### Listing Instances
 

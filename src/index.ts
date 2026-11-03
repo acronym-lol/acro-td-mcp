@@ -72,7 +72,7 @@ server.registerTool(
         project_name: inst.project_name,
         project_path: inst.project_path,
         started: inst.started,
-        is_selected: selected?.port === inst.port,
+        is_selected: selected?.pid === inst.pid,
       })),
     };
 

@@ -255,12 +255,15 @@ export interface FindEmptyResult {
 export class AcroMCPClient {
   private baseUrl: string;
   private port: number;
+  // True when ACRO_TD_MCP_PORT pins the port; otherwise the port follows the selected instance
+  private fixedPort = false;
   private selectedInstance: TDInstance | null = null;
 
   constructor() {
     // Check for explicit port override first
     const envPort = process.env.ACRO_TD_MCP_PORT;
     if (envPort) {
+      this.fixedPort = true;
       this.port = Number(envPort);
       this.baseUrl = `http://localhost:${envPort}`;
       return;
@@ -280,6 +283,35 @@ export class AcroMCPClient {
   }
 
   /**
+   * The selected instance's current registry entry, or null if it isn't running.
+   *
+   * The instance is tracked by PID, not port: if its TD re-registers on another
+   * port the client follows it, and a different TD that later takes the old port
+   * is never used. After a TD restart (new PID) the same project is picked up
+   * again; a different project never is.
+   */
+  private currentInstance(): TDInstance | null {
+    const instances = readRegistry();
+    if (this.fixedPort) {
+      return instances.find((i) => i.port === this.port) ?? null;
+    }
+
+    const prev = this.selectedInstance;
+    const instance = prev
+      ? instances.find((i) => i.pid === prev.pid) ??
+        instances.find((i) => normalizePath(i.project_path) === normalizePath(prev.project_path)) ??
+        null
+      : findInstanceForCwd(instances); // nothing was running when this server started
+
+    if (instance) {
+      this.selectedInstance = instance;
+      this.port = instance.port;
+      this.baseUrl = `http://localhost:${instance.port}`;
+    }
+    return instance;
+  }
+
+  /**
    * Get all registered TD instances
    */
   getInstances(): TDInstance[] {
@@ -290,7 +322,7 @@ export class AcroMCPClient {
    * Get the currently selected instance
    */
   getSelectedInstance(): TDInstance | null {
-    return this.selectedInstance;
+    return this.currentInstance();
   }
 
   /**
@@ -318,12 +350,18 @@ export class AcroMCPClient {
   }
 
   private async fetch(path: string, options?: RequestInit): Promise<unknown> {
+    // Look the instance up on every request, so a TD restart (new token) or a
+    // move to another port is picked up without restarting this server.
+    const instance = this.currentInstance();
+    if (!instance && this.selectedInstance && !this.fixedPort) {
+      throw new Error(
+        `TouchDesigner for ${this.selectedInstance.project_path} isn't running. ` +
+        `Reopen that project, or reconnect this MCP server to pick another instance.`
+      );
+    }
     const url = `${this.baseUrl}${path}`;
-    // Read the token on every request, so a TD restart (new token) is picked
-    // up without restarting this server.
-    const token = readRegistry().find((i) => i.port === this.port)?.token;
     const headers = new Headers(options?.headers);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (instance?.token) headers.set("Authorization", `Bearer ${instance.token}`);
 
     let res: Response;
     try {
