@@ -39,7 +39,7 @@ Outside TD: the Node bundle ships prebuilt in `dist/index.js`, so you only need 
 }
 ```
 
-After changing `src/`, rebuild with `npm install && npm run build` and commit `dist/index.js`.
+After changing `src/`, rebuild with `npm install && npm run build` and commit `dist/`. The licenses of the packages bundled into `dist/index.js` are in `dist/THIRD_PARTY_LICENSES.txt`, which the build writes.
 
 ## What it can do
 

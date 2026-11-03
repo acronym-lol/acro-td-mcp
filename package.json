@@ -7,8 +7,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
-    "build:watch": "npm run build -- --watch"
+    "build": "node build.mjs",
+    "build:watch": "node build.mjs --watch"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

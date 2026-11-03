@@ -37,7 +37,7 @@ npm install
 npm run build
 ```
 
-Then commit `dist/index.js`. In acro-td-core, run the same commands from the repo root; they install and build this module from its own lockfile, and its CI fails if the committed bundle doesn't match the source.
+Then commit `dist/`. The build also writes `dist/THIRD_PARTY_LICENSES.txt`, the licenses of the packages bundled into `dist/index.js`. In acro-td-core, run the same commands from the repo root; they install and build this module from its own lockfile, and its CI fails if the committed bundle doesn't match the source.
 
 ## Environment
 
