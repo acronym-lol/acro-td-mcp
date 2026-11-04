@@ -13,6 +13,11 @@ __pycache__/
 # Logs
 *.log
 
+# Local secrets
+.env
+.env.*
+!.env.example
+
 # Editors and OS
 .idea/
 .DS_Store
